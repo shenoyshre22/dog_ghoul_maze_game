@@ -172,8 +172,9 @@
                 bone.size = tileSize * 0.7;
                 if(player) {
                     player.size = ghoul.size = tileSize * 0.8;
-                    player.speed = tileSize / 6; // Update speed on resize
-                    ghoul.speed = tileSize / 10;
+                    // Make player twice as fast as before and slow down the ghoul
+                    player.speed = tileSize / 3; // 2x of previous tileSize/6
+                    ghoul.speed = tileSize / 20; // slower than previous tileSize/10
                     player.x = player.gx * tileSize; player.y = player.gy * tileSize;
                     player.targetX = player.x; player.targetY = player.y;
                     ghoul.x = ghoul.gx * tileSize; ghoul.y = ghoul.gy * tileSize;
@@ -382,8 +383,9 @@
                 
                 resizeCanvas(); // Resize first to get tileSize
 
-                player = createCharacter(1, 1, '🐶', tileSize / 6);
-                ghoul = createCharacter(13, 9, '👹', tileSize / 10);
+                // give the dog (player) 2x speed and reduce ghoul speed so player has a better chance
+                player = createCharacter(1, 1, '🐶', tileSize / 3);
+                ghoul = createCharacter(13, 9, '👹', tileSize / 20);
 
                 gameOver = false;
                 messageModal.classList.add('hidden');
