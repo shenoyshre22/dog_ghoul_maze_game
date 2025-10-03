@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dog & Ghoul Maze Chase</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            overflow: hidden;
+        }
+        canvas {
+            background-color: #000000;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+        .game-title, #scoreDisplay {
+            text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff;
+        }
+        .modal {
+            background-color: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(5px);
+        }
+        .btn-action {
+            background-color: #4f46e5;
+            transition: all 0.2s ease-in-out;
+        }
+        .btn-action:hover {
+            background-color: #6366f1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.5);
+        }
+        .touch-controls {
+            display: none; /* Hidden by default, shown for touch devices */
+        }
+        @media (max-width: 768px) {
+            .touch-controls {
+                display: grid;
+            }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <h1 class="game-title text-2xl md:text-4xl mb-2 text-center">Dog & Ghoul Maze Chase</h1>
+    <p id="scoreDisplay" class="text-xl md:text-2xl mb-4">Score: 0</p>
+    
+    <div id="game-container" class="relative rounded-lg">
+        <canvas id="gameCanvas"></canvas>
+        <!-- Modal for Game Over / Win -->
+        <div id="messageModal" class="modal absolute inset-0 flex-col items-center justify-center text-center p-4 rounded-lg hidden">
+            <h2 id="modalTitle" class="text-4xl md:text-6xl font-bold mb-4"></h2>
+            <p id="modalText" class="text-lg mb-6"></p>
+            <button id="restartButton" class="btn-action text-white font-bold py-3 px-6 rounded-lg text-xl">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <!-- On-screen controls for mobile -->
+    <div class="touch-controls grid-cols-3 gap-2 mt-4 w-48">
+        <div></div>
+        <button id="upBtn" class="bg-gray-700 p-4 rounded-lg text-2xl">▲</button>
+        <div></div>
+        <button id="leftBtn" class="bg-gray-700 p-4 rounded-lg text-2xl">◀</button>
+        <button id="downBtn" class="bg-gray-700 p-4 rounded-lg text-2xl">▼</button>
+        <button id="rightBtn" class="bg-gray-700 p-4 rounded-lg text-2xl">▶</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const messageModal = document.getElementById('messageModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalText = document.getElementById('modalText');
+            const restartButton = document.getElementById('restartButton');
+            const scoreDisplay = document.getElementById('scoreDisplay');
+            const gameTitle = document.querySelector('.game-title');
+
+            const upBtn = document.getElementById('upBtn');
+            const downBtn = document.getElementById('downBtn');
+            const leftBtn = document.getElementById('leftBtn');
+            const rightBtn = document.getElementById('rightBtn');
+            
+            let tileSize, score, frame = 0;
+            let audioCtx, audioReady = false;
+            let maze = [
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1],
+                [1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1],
+                [1, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 1],
+                [1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1],
+                [1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 1],
+                [1, 1, 1, 2, 1, 1, 1, 2, 1, 2, 1, 1, 1, 2, 1],
+                [1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 1],
+                [1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1],
+                [1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
+            ];
+            const initialMaze = JSON.parse(JSON.stringify(maze));
+            
+            const createCharacter = (gx, gy, char, speed) => ({
+                gx, gy, x: gx * tileSize, y: gy * tileSize,
+                targetX: gx * tileSize, targetY: gy * tileSize,
+                size: tileSize * 0.8, char, speed, isMoving: false
+            });
+
+            let player, ghoul;
+            const bone = { gx: 13, gy: 10, size: 0, char: '🦴' };
+            let gameOver = false;
+            let moveSoundToggle = false;
+
+            function initAudio() {
+                if (audioReady) return;
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                audioReady = true;
+            }
+
+            function playSound(type) {
+                if (!audioReady) return;
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+                switch(type) {
+                    case 'move':
+                        oscillator.type = 'square';
+                        oscillator.frequency.setValueAtTime(moveSoundToggle ? 200 : 250, audioCtx.currentTime);
+                        moveSoundToggle = !moveSoundToggle;
+                        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+                        break;
+                    case 'eat':
+                        oscillator.type = 'triangle';
+                        oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+                        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+                        break;
+                    case 'win':
+                        oscillator.type = 'sine';
+                        let now = audioCtx.currentTime;
+                        oscillator.frequency.setValueAtTime(523.25, now);
+                        oscillator.frequency.setValueAtTime(659.25, now + 0.1);
+                        oscillator.frequency.setValueAtTime(783.99, now + 0.2);
+                        oscillator.frequency.setValueAtTime(1046.50, now + 0.3);
+                        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                        break;
+                    case 'lose':
+                        oscillator.type = 'sawtooth';
+                        let loseNow = audioCtx.currentTime;
+                        oscillator.frequency.setValueAtTime(300, loseNow);
+                        oscillator.frequency.exponentialRampToValueAtTime(100, loseNow + 0.5);
+                        gainNode.gain.exponentialRampToValueAtTime(0.001, loseNow + 0.5);
+                        break;
+                }
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.5);
+            }
+
+            function resizeCanvas() {
+                const shorterSide = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.6);
+                tileSize = Math.floor(shorterSide / maze[0].length);
+                canvas.width = tileSize * maze[0].length;
+                canvas.height = tileSize * maze.length;
+                bone.size = tileSize * 0.7;
+                if(player) {
+                    player.size = ghoul.size = tileSize * 0.8;
+                    player.x = player.gx * tileSize; player.y = player.gy * tileSize;
+                    player.targetX = player.x; player.targetY = player.y;
+                    ghoul.x = ghoul.gx * tileSize; ghoul.y = ghoul.gy * tileSize;
+                    ghoul.targetX = ghoul.x; ghoul.targetY = ghoul.y;
+                }
+            }
+
+            function drawMaze() {
+                for (let r = 0; r < maze.length; r++) {
+                    for (let c = 0; c < maze[r].length; c++) {
+                        ctx.fillStyle = maze[r][c] === 1 ? '#4f46e5' : '#000';
+                        ctx.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
+                        if (maze[r][c] === 2) {
+                            ctx.fillStyle = '#fff';
+                            ctx.beginPath();
+                            ctx.arc(c * tileSize + tileSize / 2, r * tileSize + tileSize / 2, tileSize * 0.15, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                }
+            }
+
+            function drawCharacter(char) {
+                let yOffset = 0;
+                if (char.char === '👹') {
+                    yOffset = Math.sin(frame * 0.1) * (tileSize * 0.1);
+                }
+                ctx.font = `${char.size}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const xPos = (char.char === '🦴') ? char.gx * tileSize + tileSize/2 : char.x + tileSize/2;
+                const yPos = (char.char === '🦴') ? char.gy * tileSize + tileSize/2 : char.y + tileSize/2;
+                ctx.fillText(char.char, xPos, yPos + yOffset);
+            }
+
+            function updateCharacterPosition(char) {
+                if (!char.isMoving) return;
+
+                const dx = char.targetX - char.x;
+                const dy = char.targetY - char.y;
+
+                if (Math.abs(dx) < char.speed && Math.abs(dy) < char.speed) {
+                    char.x = char.targetX;
+                    char.y = char.targetY;
+                    char.isMoving = false;
+                    
+                    if(char === player && maze[char.gy][char.gx] === 2){
+                         score += 10;
+                         scoreDisplay.textContent = `Score: ${score}`;
+                         maze[char.gy][char.gx] = 0;
+                         playSound('eat');
+                    }
+                    return;
+                }
+                char.x += Math.sign(dx) * char.speed;
+                char.y += Math.sign(dy) * char.speed;
+            }
+            
+            function movePlayer(dx, dy) {
+                if (player.isMoving) return;
+                const nextGx = player.gx + dx;
+                const nextGy = player.gy + dy;
+
+                if (maze[nextGy] && maze[nextGy][nextGx] !== 1) {
+                    player.gx = nextGx;
+                    player.gy = nextGy;
+                    player.targetX = nextGx * tileSize;
+                    player.targetY = nextGy * tileSize;
+                    player.isMoving = true;
+                    playSound('move');
+                }
+            }
+
+            function updateGhoulAI() {
+                if (ghoul.isMoving) return;
+
+                const dx = player.gx - ghoul.gx, dy = player.gy - ghoul.gy;
+                let moved = false;
+                
+                const tryMove = (gdx, gdy) => {
+                    const nextGx = ghoul.gx + gdx;
+                    const nextGy = ghoul.gy + gdy;
+                    if (maze[nextGy] && maze[nextGy][nextGx] !== 1) {
+                        ghoul.gx = nextGx; ghoul.gy = nextGy;
+                        ghoul.targetX = nextGx * tileSize; ghoul.targetY = nextGy * tileSize;
+                        ghoul.isMoving = true;
+                        return true;
+                    }
+                    return false;
+                }
+
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    if (tryMove(Math.sign(dx), 0)) moved = true;
+                }
+                if (!moved && tryMove(0, Math.sign(dy))) moved = true;
+                if (!moved && tryMove(Math.sign(dx), 0)) moved = true;
+            }
+
+            function checkCollisions() {
+                if (player.gx === ghoul.gx && player.gy === ghoul.gy) endGame(false);
+                if (player.gx === bone.gx && player.gy === bone.gy) endGame(true);
+            }
+            
+            function endGame(isWin) {
+                gameOver = true;
+                gameTitle.style.display = 'none';
+                scoreDisplay.style.display = 'none';
+
+                if (isWin) {
+                    modalTitle.textContent = 'YOU WIN! 🏆';
+                    modalText.textContent = `You escaped with a score of ${score}!`;
+                    playSound('win');
+                } else {
+                    modalTitle.textContent = 'GAME OVER 💀';
+                    modalText.textContent = 'The ghoul caught the poor doggo.';
+                    playSound('lose');
+                }
+                messageModal.classList.remove('hidden');
+                messageModal.classList.add('flex');
+            }
+
+            function resetGame() {
+                score = 0;
+                scoreDisplay.textContent = 'Score: 0';
+                maze = JSON.parse(JSON.stringify(initialMaze));
+                
+                resizeCanvas(); // Resize first to get tileSize
+
+                player = createCharacter(1, 1, '🐶', tileSize / 8);
+                ghoul = createCharacter(13, 9, '👹', tileSize / 10);
+
+                gameOver = false;
+                messageModal.classList.add('hidden');
+                messageModal.classList.remove('flex');
+                gameTitle.style.display = 'block';
+                scoreDisplay.style.display = 'block';
+                if(!gameLoop.isRunning) gameLoop();
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawMaze();
+                drawCharacter(bone);
+                drawCharacter(ghoul);
+                drawCharacter(player);
+            }
+            
+            let isRunning = false;
+            function gameLoop() {
+                gameLoop.isRunning = true;
+                if (gameOver) {
+                    gameLoop.isRunning = false;
+                    return;
+                }
+                frame++;
+                updateCharacterPosition(player);
+                updateCharacterPosition(ghoul);
+                updateGhoulAI();
+                draw();
+                if(!player.isMoving) checkCollisions();
+                requestAnimationFrame(gameLoop);
+            }
+            
+            function handleKeyDown(e) {
+                initAudio();
+                if(gameOver) return;
+                const keyMap = { 'ArrowUp': 'up', 'w': 'up', 'ArrowDown': 'down', 's': 'down', 'ArrowLeft': 'left', 'a': 'left', 'ArrowRight': 'right', 'd': 'right' };
+                const direction = keyMap[e.key];
+                if(direction === 'up') movePlayer(0, -1);
+                if(direction === 'down') movePlayer(0, 1);
+                if(direction === 'left') movePlayer(-1, 0);
+                if(direction === 'right') movePlayer(1, 0);
+            }
+
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('resize', () => {
+                resizeCanvas();
+                draw();
+            });
+            restartButton.addEventListener('click', resetGame);
+            
+            const handleTouchMove = (dir) => {
+                initAudio();
+                if(dir === 'up') movePlayer(0, -1);
+                if(dir === 'down') movePlayer(0, 1);
+                if(dir === 'left') movePlayer(-1, 0);
+                if(dir === 'right') movePlayer(1, 0);
+            }
+
+            upBtn.addEventListener('click', () => handleTouchMove('up'));
+            downBtn.addEventListener('click', () => handleTouchMove('down'));
+            leftBtn.addEventListener('click', () => handleTouchMove('left'));
+            rightBtn.addEventListener('click', () => handleTouchMove('right'));
+
+            resetGame();
+        });
+    </script>
+
+</body>
+</html>
+
