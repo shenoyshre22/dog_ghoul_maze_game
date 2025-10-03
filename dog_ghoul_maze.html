@@ -108,8 +108,7 @@
                 gx, gy, x: gx * tileSize, y: gy * tileSize,
                 targetX: gx * tileSize, targetY: gy * tileSize,
                 size: tileSize * 0.8, char, speed, isMoving: false,
-                // path will store upcoming grid steps for AI characters (array of {x, y})
-                path: []
+                lastMove: { dx: 0, dy: 0 } // Add memory for ghoul's last move
             });
 
             let player, ghoul;
@@ -172,9 +171,8 @@
                 bone.size = tileSize * 0.7;
                 if(player) {
                     player.size = ghoul.size = tileSize * 0.8;
-                    // Make player twice as fast as before and slow down the ghoul
-                    player.speed = tileSize / 3; // 2x of previous tileSize/6
-                    ghoul.speed = tileSize / 20; // slower than previous tileSize/10
+                    player.speed = tileSize / 6; 
+                    ghoul.speed = tileSize / 10;
                     player.x = player.gx * tileSize; player.y = player.gy * tileSize;
                     player.targetX = player.x; player.targetY = player.y;
                     ghoul.x = ghoul.gx * tileSize; ghoul.y = ghoul.gy * tileSize;
@@ -248,109 +246,58 @@
                 }
             }
 
-            // Simple BFS pathfinder that returns an array of steps from (sx, sy) to (gx, gy)
-            function findPath(sx, sy, gx, gy) {
-                const rows = maze.length;
-                const cols = maze[0].length;
-                const inBounds = (x, y) => y >= 0 && y < rows && x >= 0 && x < cols;
-                const key = (x, y) => `${x},${y}`;
-                const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ];
-
-                const q = [];
-                const visited = new Set();
-                const parent = new Map();
-
-                q.push({x: sx, y: sy});
-                visited.add(key(sx, sy));
-
-                while(q.length) {
-                    const cur = q.shift();
-                    if (cur.x === gx && cur.y === gy) {
-                        // reconstruct path (excluding start)
-                        const path = [];
-                        let k = key(cur.x, cur.y);
-                        while(parent.has(k)) {
-                            const p = parent.get(k); // {x,y}
-                            path.push({ x: cur.x, y: cur.y });
-                            cur.x = p.x; cur.y = p.y; // step back
-                            k = key(cur.x, cur.y);
-                        }
-                        // path currently goes from goal->...->start, reverse and remove start
-                        path.reverse();
-                        // ensure first step isn't the start cell
-                        if (path.length && path[0].x === sx && path[0].y === sy) path.shift();
-                        return path;
-                    }
-
-                    for (const [dx, dy] of dirs) {
-                        const nx = cur.x + dx;
-                        const ny = cur.y + dy;
-                        if (!inBounds(nx, ny)) continue;
-                        if (maze[ny][nx] === 1) continue; // wall
-                        const k = key(nx, ny);
-                        if (visited.has(k)) continue;
-                        visited.add(k);
-                        parent.set(k, { x: cur.x, y: cur.y });
-                        q.push({ x: nx, y: ny });
-                    }
-                }
-                return null;
-            }
-
             function updateGhoulAI() {
                 if (ghoul.isMoving) return;
 
-                // If we don't have a path or the path is exhausted or next step is blocked, recompute
-                const needsRecompute = () => {
-                    if (!ghoul.path || ghoul.path.length === 0) return true;
-                    const next = ghoul.path[0];
-                    // If next step is now a wall or out of bounds, recompute
-                    if (!maze[next.y] || maze[next.y][next.x] === 1) return true;
-                    return false;
-                };
+                const possibleMoves = [
+                    { dx: 0, dy: 1 }, { dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }
+                ];
 
-                if (needsRecompute()) {
-                    const path = findPath(ghoul.gx, ghoul.gy, player.gx, player.gy);
-                    if (path && path.length) {
-                        ghoul.path = path;
-                    } else {
-                        ghoul.path = [];
-                    }
+                let validMoves = possibleMoves.filter(move => {
+                    const nextGy = ghoul.gy + move.dy;
+                    const nextGx = ghoul.gx + move.dx;
+                    return maze[nextGy]?.[nextGx] !== undefined && maze[nextGy][nextGx] !== 1;
+                });
+                
+                // --- AI IMPROVEMENT: Prevent immediate reversal ---
+                if (validMoves.length > 1) {
+                    validMoves = validMoves.filter(move => 
+                        !(move.dx === -ghoul.lastMove.dx && move.dy === -ghoul.lastMove.dy)
+                    );
                 }
 
-                const tryMoveTo = (nx, ny) => {
-                    if (maze[ny] && maze[ny][nx] !== 1) {
-                        ghoul.gx = nx; ghoul.gy = ny;
-                        ghoul.targetX = nx * tileSize;
-                        ghoul.targetY = ny * tileSize;
-                        ghoul.isMoving = true;
-                        return true;
-                    }
-                    return false;
-                };
-
-                // Follow computed path if available
-                if (ghoul.path && ghoul.path.length) {
-                    const next = ghoul.path.shift();
-                    if (!tryMoveTo(next.x, next.y)) {
-                        // blocked unexpectedly, clear path and fallback
-                        ghoul.path = [];
-                    }
-                    return;
+                if (validMoves.length === 0) { // Should only happen in a 1x1 dead end
+                     const reverseMove = { dx: -ghoul.lastMove.dx, dy: -ghoul.lastMove.dy };
+                     if (maze[ghoul.gy + reverseMove.dy]?.[ghoul.gx + reverseMove.dx] !== 1) {
+                         validMoves.push(reverseMove);
+                     } else {
+                         return; // Truly stuck, nowhere to go.
+                     }
                 }
 
-                // If no path found, fallback to random valid move so ghoul keeps moving
-                const possibleMoves = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-                const validMoves = possibleMoves.filter(([mdx, mdy]) => {
-                    const nextGy = ghoul.gy + mdy;
-                    const nextGx = ghoul.gx + mdx;
-                    return maze[nextGy] && maze[nextGy][nextGx] !== 1;
+                validMoves.forEach(move => {
+                    const nextGx = ghoul.gx + move.dx;
+                    const nextGy = ghoul.gy + move.dy;
+                    move.distance = Math.hypot(player.gx - nextGx, player.gy - nextGy);
                 });
 
-                if (validMoves.length > 0) {
-                    const [randomDx, randomDy] = validMoves[Math.floor(Math.random() * validMoves.length)];
-                    tryMoveTo(ghoul.gx + randomDx, ghoul.gy + randomDy);
+                validMoves.sort((a, b) => a.distance - b.distance);
+                
+                let chosenMove;
+                const chanceOfRandomMove = 0.25;
+
+                if (validMoves.length > 1 && Math.random() < chanceOfRandomMove) {
+                    chosenMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+                } else {
+                    chosenMove = validMoves[0];
                 }
+
+                ghoul.lastMove = { dx: chosenMove.dx, dy: chosenMove.dy }; // Remember this move
+                ghoul.gx += chosenMove.dx;
+                ghoul.gy += chosenMove.dy;
+                ghoul.targetX = ghoul.gx * tileSize;
+                ghoul.targetY = ghoul.gy * tileSize;
+                ghoul.isMoving = true;
             }
 
             function checkCollisions() {
@@ -381,11 +328,10 @@
                 scoreDisplay.textContent = 'Score: 0';
                 maze = JSON.parse(JSON.stringify(initialMaze));
                 
-                resizeCanvas(); // Resize first to get tileSize
+                resizeCanvas(); 
 
-                // give the dog (player) 2x speed and reduce ghoul speed so player has a better chance
-                player = createCharacter(1, 1, '🐶', tileSize / 3);
-                ghoul = createCharacter(13, 9, '👹', tileSize / 20);
+                player = createCharacter(1, 1, '🐶', tileSize / 6);
+                ghoul = createCharacter(13, 9, '👹', tileSize / 10);
 
                 gameOver = false;
                 messageModal.classList.add('hidden');
