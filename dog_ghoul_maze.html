@@ -170,6 +170,8 @@
                 bone.size = tileSize * 0.7;
                 if(player) {
                     player.size = ghoul.size = tileSize * 0.8;
+                    player.speed = tileSize / 6; // Update speed on resize
+                    ghoul.speed = tileSize / 10;
                     player.x = player.gx * tileSize; player.y = player.gy * tileSize;
                     player.targetX = player.x; player.targetY = player.y;
                     ghoul.x = ghoul.gx * tileSize; ghoul.y = ghoul.gy * tileSize;
@@ -246,7 +248,8 @@
             function updateGhoulAI() {
                 if (ghoul.isMoving) return;
 
-                const dx = player.gx - ghoul.gx, dy = player.gy - ghoul.gy;
+                const dx = player.gx - ghoul.gx;
+                const dy = player.gy - ghoul.gy;
                 let moved = false;
                 
                 const tryMove = (gdx, gdy) => {
@@ -254,18 +257,35 @@
                     const nextGy = ghoul.gy + gdy;
                     if (maze[nextGy] && maze[nextGy][nextGx] !== 1) {
                         ghoul.gx = nextGx; ghoul.gy = nextGy;
-                        ghoul.targetX = nextGx * tileSize; ghoul.targetY = nextGy * tileSize;
+                        ghoul.targetX = nextGx * tileSize;
+                        ghoul.targetY = nextGy * tileSize;
                         ghoul.isMoving = true;
                         return true;
                     }
                     return false;
-                }
+                };
 
+                // Primary chase logic
                 if (Math.abs(dx) > Math.abs(dy)) {
                     if (tryMove(Math.sign(dx), 0)) moved = true;
                 }
                 if (!moved && tryMove(0, Math.sign(dy))) moved = true;
                 if (!moved && tryMove(Math.sign(dx), 0)) moved = true;
+
+                // Fallback logic if stuck
+                if (!moved) {
+                    const possibleMoves = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                    const validMoves = possibleMoves.filter(([mdx, mdy]) => {
+                        const nextGy = ghoul.gy + mdy;
+                        const nextGx = ghoul.gx + mdx;
+                        return maze[nextGy] && maze[nextGy][nextGx] !== 1;
+                    });
+
+                    if (validMoves.length > 0) {
+                        const [randomDx, randomDy] = validMoves[Math.floor(Math.random() * validMoves.length)];
+                        tryMove(randomDx, randomDy);
+                    }
+                }
             }
 
             function checkCollisions() {
@@ -298,7 +318,7 @@
                 
                 resizeCanvas(); // Resize first to get tileSize
 
-                player = createCharacter(1, 1, '🐶', tileSize / 8);
+                player = createCharacter(1, 1, '🐶', tileSize / 6);
                 ghoul = createCharacter(13, 9, '👹', tileSize / 10);
 
                 gameOver = false;
