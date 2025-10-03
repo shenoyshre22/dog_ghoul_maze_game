@@ -107,7 +107,9 @@
             const createCharacter = (gx, gy, char, speed) => ({
                 gx, gy, x: gx * tileSize, y: gy * tileSize,
                 targetX: gx * tileSize, targetY: gy * tileSize,
-                size: tileSize * 0.8, char, speed, isMoving: false
+                size: tileSize * 0.8, char, speed, isMoving: false,
+                // path will store upcoming grid steps for AI characters (array of {x, y})
+                path: []
             });
 
             let player, ghoul;
@@ -245,46 +247,108 @@
                 }
             }
 
+            // Simple BFS pathfinder that returns an array of steps from (sx, sy) to (gx, gy)
+            function findPath(sx, sy, gx, gy) {
+                const rows = maze.length;
+                const cols = maze[0].length;
+                const inBounds = (x, y) => y >= 0 && y < rows && x >= 0 && x < cols;
+                const key = (x, y) => `${x},${y}`;
+                const dirs = [ [1,0], [-1,0], [0,1], [0,-1] ];
+
+                const q = [];
+                const visited = new Set();
+                const parent = new Map();
+
+                q.push({x: sx, y: sy});
+                visited.add(key(sx, sy));
+
+                while(q.length) {
+                    const cur = q.shift();
+                    if (cur.x === gx && cur.y === gy) {
+                        // reconstruct path (excluding start)
+                        const path = [];
+                        let k = key(cur.x, cur.y);
+                        while(parent.has(k)) {
+                            const p = parent.get(k); // {x,y}
+                            path.push({ x: cur.x, y: cur.y });
+                            cur.x = p.x; cur.y = p.y; // step back
+                            k = key(cur.x, cur.y);
+                        }
+                        // path currently goes from goal->...->start, reverse and remove start
+                        path.reverse();
+                        // ensure first step isn't the start cell
+                        if (path.length && path[0].x === sx && path[0].y === sy) path.shift();
+                        return path;
+                    }
+
+                    for (const [dx, dy] of dirs) {
+                        const nx = cur.x + dx;
+                        const ny = cur.y + dy;
+                        if (!inBounds(nx, ny)) continue;
+                        if (maze[ny][nx] === 1) continue; // wall
+                        const k = key(nx, ny);
+                        if (visited.has(k)) continue;
+                        visited.add(k);
+                        parent.set(k, { x: cur.x, y: cur.y });
+                        q.push({ x: nx, y: ny });
+                    }
+                }
+                return null;
+            }
+
             function updateGhoulAI() {
                 if (ghoul.isMoving) return;
 
-                const dx = player.gx - ghoul.gx;
-                const dy = player.gy - ghoul.gy;
-                let moved = false;
-                
-                const tryMove = (gdx, gdy) => {
-                    const nextGx = ghoul.gx + gdx;
-                    const nextGy = ghoul.gy + gdy;
-                    if (maze[nextGy] && maze[nextGy][nextGx] !== 1) {
-                        ghoul.gx = nextGx; ghoul.gy = nextGy;
-                        ghoul.targetX = nextGx * tileSize;
-                        ghoul.targetY = nextGy * tileSize;
+                // If we don't have a path or the path is exhausted or next step is blocked, recompute
+                const needsRecompute = () => {
+                    if (!ghoul.path || ghoul.path.length === 0) return true;
+                    const next = ghoul.path[0];
+                    // If next step is now a wall or out of bounds, recompute
+                    if (!maze[next.y] || maze[next.y][next.x] === 1) return true;
+                    return false;
+                };
+
+                if (needsRecompute()) {
+                    const path = findPath(ghoul.gx, ghoul.gy, player.gx, player.gy);
+                    if (path && path.length) {
+                        ghoul.path = path;
+                    } else {
+                        ghoul.path = [];
+                    }
+                }
+
+                const tryMoveTo = (nx, ny) => {
+                    if (maze[ny] && maze[ny][nx] !== 1) {
+                        ghoul.gx = nx; ghoul.gy = ny;
+                        ghoul.targetX = nx * tileSize;
+                        ghoul.targetY = ny * tileSize;
                         ghoul.isMoving = true;
                         return true;
                     }
                     return false;
                 };
 
-                // Primary chase logic
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    if (tryMove(Math.sign(dx), 0)) moved = true;
-                }
-                if (!moved && tryMove(0, Math.sign(dy))) moved = true;
-                if (!moved && tryMove(Math.sign(dx), 0)) moved = true;
-
-                // Fallback logic if stuck
-                if (!moved) {
-                    const possibleMoves = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-                    const validMoves = possibleMoves.filter(([mdx, mdy]) => {
-                        const nextGy = ghoul.gy + mdy;
-                        const nextGx = ghoul.gx + mdx;
-                        return maze[nextGy] && maze[nextGy][nextGx] !== 1;
-                    });
-
-                    if (validMoves.length > 0) {
-                        const [randomDx, randomDy] = validMoves[Math.floor(Math.random() * validMoves.length)];
-                        tryMove(randomDx, randomDy);
+                // Follow computed path if available
+                if (ghoul.path && ghoul.path.length) {
+                    const next = ghoul.path.shift();
+                    if (!tryMoveTo(next.x, next.y)) {
+                        // blocked unexpectedly, clear path and fallback
+                        ghoul.path = [];
                     }
+                    return;
+                }
+
+                // If no path found, fallback to random valid move so ghoul keeps moving
+                const possibleMoves = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+                const validMoves = possibleMoves.filter(([mdx, mdy]) => {
+                    const nextGy = ghoul.gy + mdy;
+                    const nextGx = ghoul.gx + mdx;
+                    return maze[nextGy] && maze[nextGy][nextGx] !== 1;
+                });
+
+                if (validMoves.length > 0) {
+                    const [randomDx, randomDy] = validMoves[Math.floor(Math.random() * validMoves.length)];
+                    tryMoveTo(ghoul.gx + randomDx, ghoul.gy + randomDy);
                 }
             }
 
