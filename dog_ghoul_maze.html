@@ -89,20 +89,7 @@
             
             let tileSize, score, frame = 0;
             let audioCtx, audioReady = false;
-            let maze = [
-                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                [1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1],
-                [1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1],
-                [1, 2, 1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 1],
-                [1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1],
-                [1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 1],
-                [1, 1, 1, 2, 1, 1, 1, 2, 1, 2, 1, 1, 1, 2, 1],
-                [1, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 2, 2, 1],
-                [1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1],
-                [1, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 1],
-                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-            ];
-            const initialMaze = JSON.parse(JSON.stringify(maze));
+            let maze; // Maze is now dynamic
             
             const createCharacter = (gx, gy, char, speed) => ({
                 gx, gy, x: gx * tileSize, y: gy * tileSize,
@@ -112,9 +99,44 @@
             });
 
             let player, ghoul;
-            const bone = { gx: 13, gy: 10, size: 0, char: '🦴' };
+            const bone = { gx: 0, gy: 0, size: 0, char: '🦴' }; // Position will be set dynamically
             let gameOver = false;
             let moveSoundToggle = false;
+
+            function generateMaze(width, height) {
+                if (width % 2 === 0) width++;
+                if (height % 2 === 0) height++;
+                const newMaze = Array(height).fill(0).map(() => Array(width).fill(1));
+                const stack = [];
+                const startX = 1, startY = 1;
+                
+                newMaze[startY][startX] = 2; // Path with treat
+                stack.push([startX, startY]);
+
+                while (stack.length > 0) {
+                    const [cx, cy] = stack[stack.length - 1];
+                    const neighbors = [];
+                    // Check potential neighbors 2 cells away
+                    const moves = [[0, -2], [2, 0], [0, 2], [-2, 0]];
+                    for(const move of moves){
+                        const [dx, dy] = move;
+                        const nx = cx + dx, ny = cy + dy;
+                        if(ny >= 0 && ny < height && nx >= 0 && nx < width && newMaze[ny][nx] === 1){
+                           neighbors.push({x:nx, y:ny, wallX: cx + dx/2, wallY: cy + dy/2});
+                        }
+                    }
+
+                    if (neighbors.length > 0) {
+                        const { x, y, wallX, wallY } = neighbors[Math.floor(Math.random() * neighbors.length)];
+                        newMaze[wallY][wallX] = 2; // Carve path
+                        newMaze[y][x] = 2; // Move to neighbor
+                        stack.push([x, y]);
+                    } else {
+                        stack.pop(); // Backtrack
+                    }
+                }
+                return newMaze;
+            }
 
             function initAudio() {
                 if (audioReady) return;
@@ -172,7 +194,7 @@
                 if(player) {
                     player.size = ghoul.size = tileSize * 0.8;
                     player.speed = tileSize / 6; 
-                    ghoul.speed = tileSize / 12; // --- SPEED REDUCED ---
+                    ghoul.speed = tileSize / 12;
                     player.x = player.gx * tileSize; player.y = player.gy * tileSize;
                     player.targetX = player.x; player.targetY = player.y;
                     ghoul.x = ghoul.gx * tileSize; ghoul.y = ghoul.gy * tileSize;
@@ -259,19 +281,18 @@
                     return maze[nextGy]?.[nextGx] !== undefined && maze[nextGy][nextGx] !== 1;
                 });
                 
-                // --- AI IMPROVEMENT: Prevent immediate reversal ---
                 if (validMoves.length > 1) {
                     validMoves = validMoves.filter(move => 
                         !(move.dx === -ghoul.lastMove.dx && move.dy === -ghoul.lastMove.dy)
                     );
                 }
 
-                if (validMoves.length === 0) { // Should only happen in a 1x1 dead end
+                if (validMoves.length === 0) {
                      const reverseMove = { dx: -ghoul.lastMove.dx, dy: -ghoul.lastMove.dy };
                      if (maze[ghoul.gy + reverseMove.dy]?.[ghoul.gx + reverseMove.dx] !== 1) {
                          validMoves.push(reverseMove);
                      } else {
-                         return; // Truly stuck, nowhere to go.
+                         return; 
                      }
                 }
 
@@ -292,7 +313,7 @@
                     chosenMove = validMoves[0];
                 }
 
-                ghoul.lastMove = { dx: chosenMove.dx, dy: chosenMove.dy }; // Remember this move
+                ghoul.lastMove = { dx: chosenMove.dx, dy: chosenMove.dy }; 
                 ghoul.gx += chosenMove.dx;
                 ghoul.gy += chosenMove.dy;
                 ghoul.targetX = ghoul.gx * tileSize;
@@ -326,12 +347,35 @@
             function resetGame() {
                 score = 0;
                 scoreDisplay.textContent = 'Score: 0';
-                maze = JSON.parse(JSON.stringify(initialMaze));
                 
+                maze = generateMaze(15, 11);
+
+                // Find random spots for bone and ghoul in the bottom half
+                const openSpotsBottom = [];
+                for (let r = Math.floor(maze.length / 2); r < maze.length; r++) {
+                    for (let c = 1; c < maze[0].length - 1; c++) {
+                        if (maze[r][c] !== 1) {
+                            openSpotsBottom.push({ gx: c, gy: r });
+                        }
+                    }
+                }
+                // Shuffle spots for randomness
+                for (let i = openSpotsBottom.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [openSpotsBottom[i], openSpotsBottom[j]] = [openSpotsBottom[j], openSpotsBottom[i]];
+                }
+
+                const bonePos = openSpotsBottom.pop();
+                const ghoulPos = openSpotsBottom.pop();
+
+                bone.gx = bonePos.gx;
+                bone.gy = bonePos.gy;
+                maze[bone.gy][bone.gx] = 0; // The bone spot is not a treat
+
                 resizeCanvas(); 
 
                 player = createCharacter(1, 1, '🐶', tileSize / 6);
-                ghoul = createCharacter(13, 9, '👹', tileSize / 12); // Speed also updated here for initial setup
+                ghoul = createCharacter(ghoulPos.gx, ghoulPos.gy, '👹', tileSize / 12);
 
                 gameOver = false;
                 messageModal.classList.add('hidden');
