@@ -350,23 +350,36 @@
                 
                 maze = generateMaze(15, 11);
 
-                // Find random spots for bone and ghoul in the bottom half
-                const openSpotsBottom = [];
-                for (let r = Math.floor(maze.length / 2); r < maze.length; r++) {
+                // --- Smarter Placement Logic ---
+                const openSpots = [];
+                for (let r = 1; r < maze.length - 1; r++) {
                     for (let c = 1; c < maze[0].length - 1; c++) {
                         if (maze[r][c] !== 1) {
-                            openSpotsBottom.push({ gx: c, gy: r });
+                            const distance = (c - 1) + (r - 1); // Manhattan distance from player start (1,1)
+                            openSpots.push({ gx: c, gy: r, distance });
                         }
                     }
                 }
-                // Shuffle spots for randomness
-                for (let i = openSpotsBottom.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [openSpotsBottom[i], openSpotsBottom[j]] = [openSpotsBottom[j], openSpotsBottom[i]];
+                
+                // Bone must be far away
+                const farSpots = openSpots.filter(spot => spot.distance > 10);
+                // Ghoul must not be too close
+                const ghoulSpots = openSpots.filter(spot => spot.distance > 6);
+                
+                // Get a random far spot for the bone
+                const bonePos = farSpots[Math.floor(Math.random() * farSpots.length)];
+                
+                // Get a random valid spot for the ghoul that isn't the bone's spot
+                let ghoulPos;
+                const validGhoulSpots = ghoulSpots.filter(spot => spot.gx !== bonePos.gx || spot.gy !== bonePos.gy);
+                if (validGhoulSpots.length > 0) {
+                    ghoulPos = validGhoulSpots[Math.floor(Math.random() * validGhoulSpots.length)];
+                } else {
+                    // Fallback: if somehow no valid spots, just pick one that's not the player start
+                    const fallbackSpots = openSpots.filter(spot => spot.gx !== 1 || spot.gy !== 1);
+                    ghoulPos = fallbackSpots[Math.floor(Math.random() * fallbackSpots.length)];
                 }
 
-                const bonePos = openSpotsBottom.pop();
-                const ghoulPos = openSpotsBottom.pop();
 
                 bone.gx = bonePos.gx;
                 bone.gy = bonePos.gy;
