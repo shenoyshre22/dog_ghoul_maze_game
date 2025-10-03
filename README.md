@@ -1,4 +1,5 @@
 Dog & Ghoul Maze Chase
+
 A classic, retro-style maze chase game built to run in any web browser. Guide a brave little dog (🐶) through a very simple maze,  collect all the treats, and grab the final bone (🦴) to win,
 BUT BUT BUT - all while being relentlessly pursued by a menacing ghoul (👹)!!
 
