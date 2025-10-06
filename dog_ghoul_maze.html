@@ -250,7 +250,7 @@
                     player.size = ghoul.size = tileSize * 0.8;
                     // Make player faster and ghoul slower for easier wins
                     player.speed = tileSize / 3; 
-                    ghoul.speed = tileSize / 20;
+                    ghoul.speed = tileSize / 9;
                     player.x = player.gx * tileSize; player.y = player.gy * tileSize;
                     player.targetX = player.x; player.targetY = player.y;
                     ghoul.x = ghoul.gx * tileSize; ghoul.y = ghoul.gy * tileSize;
@@ -451,7 +451,7 @@
 
                 // player is faster; ghoul is slower to make winning feasible
                     player = createCharacter(playerStart.gx, playerStart.gy, '🐶', tileSize / 3);
-                    ghoul = createCharacter(ghoulStart.gx, ghoulStart.gy, '👹', tileSize / 20);
+                    ghoul = createCharacter(ghoulStart.gx, ghoulStart.gy, '👹', tileSize / 12);
 
                 gameOver = false;
                 messageModal.classList.add('hidden');
