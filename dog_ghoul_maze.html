@@ -91,21 +91,21 @@
             let audioCtx, audioReady = false;
             // Fixed maze pattern (kept the same across games)
             // 1 = wall, 2 = path/treat, 0 = exit/opening
-            // This version is intentionally more awkward/tough but static.
+            // Tough static labyrinth with many dead-ends and branches.
             const fixedMaze = [
                 [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                [1,2,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,2,2,1],
-                [1,1,1,1,2,1,1,1,2,1,2,1,2,1,2,1,1,1,1,2,1],
-                [1,2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,1,2,1],
-                [1,2,1,1,1,1,2,1,1,1,2,1,1,1,2,1,1,2,1,2,1],
-                [1,2,2,2,2,1,2,2,2,2,2,2,2,1,2,2,2,2,1,2,1],
-                [1,1,1,1,2,1,1,1,1,1,1,1,2,1,1,1,1,2,1,2,1],
-                [1,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,1],
-                [1,2,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,2,1],
-                [1,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,1],
-                [1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,2,1],
+                [1,2,1,2,2,2,1,2,2,2,1,2,1,2,2,2,1,2,2,2,1],
+                [1,2,1,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,1,2,1],
+                [1,2,2,2,1,2,2,2,1,2,2,2,1,2,2,2,2,2,1,2,1],
+                [1,1,1,2,1,1,1,2,1,1,1,2,1,1,1,1,1,2,1,2,1],
+                [1,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,1],
+                [1,2,1,1,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,2,1],
+                [1,2,2,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1],
+                [1,1,1,1,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,2,1],
+                [1,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1],
+                [1,2,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1],
                 [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,1],
-                [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,2,1],
+                [1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,2,1,2,1],
                 [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
                 [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1],
             ];
@@ -410,19 +410,33 @@
                     // Bone is fixed at the extreme end of the maze (col=19,row=13)
                     const bonePos = { gx: 19, gy: 13 };
 
-                // Build a list of open spots and choose the farthest valid spot for the ghoul
-                const openSpots = [];
-                for (let r = 1; r < maze.length - 1; r++) {
-                    for (let c = 1; c < maze[0].length - 1; c++) {
-                        if (maze[r][c] !== 1) {
-                            const distance = Math.abs(c - 1) + Math.abs(r - 1); // Manhattan dist from player
-                            openSpots.push({ gx: c, gy: r, distance });
+                    // Build a list of open spots for possible starts (exclude bone)
+                    const openSpots = [];
+                    for (let r = 1; r < maze.length - 1; r++) {
+                        for (let c = 1; c < maze[0].length - 1; c++) {
+                            if (maze[r][c] !== 1 && !(c === bonePos.gx && r === bonePos.gy)) {
+                                openSpots.push({ gx: c, gy: r });
+                            }
                         }
                     }
-                }
 
-                const validGhoulSpots = openSpots.filter(spot => (spot.gx !== 1 || spot.gy !== 1) && (spot.gx !== bonePos.gx || spot.gy !== bonePos.gy));
-                let ghoulPos = validGhoulSpots.length > 0 ? validGhoulSpots.sort((a,b) => b.distance - a.distance)[0] : { gx: maze[0].length - 2, gy: maze.length - 2 };
+                    // Choose a random player start from open spots (but prefer near entrance)
+                    const playerCandidates = openSpots.filter(s => Math.abs(s.gx - 1) + Math.abs(s.gy - 1) <= 4);
+                    const playerStart = (playerCandidates.length > 0) ? playerCandidates[Math.floor(Math.random() * playerCandidates.length)] : openSpots[Math.floor(Math.random() * openSpots.length)];
+
+                    // Choose a ghoul start that is far from the playerStart
+                    const minSeparation = 8; // Manhattan distance
+                    const ghoulCandidates = openSpots.filter(s => Math.abs(s.gx - playerStart.gx) + Math.abs(s.gy - playerStart.gy) >= minSeparation);
+                    let ghoulStart;
+                    if (ghoulCandidates.length > 0) {
+                        // pick a random one among the far candidates for variability
+                        ghoulStart = ghoulCandidates[Math.floor(Math.random() * ghoulCandidates.length)];
+                    } else {
+                        // fallback to farthest available spot
+                        const distList = openSpots.map(s => ({ ...s, d: Math.abs(s.gx - playerStart.gx) + Math.abs(s.gy - playerStart.gy) }));
+                        distList.sort((a,b) => b.d - a.d);
+                        ghoulStart = distList[0] || { gx: maze[0].length - 2, gy: maze.length - 2 };
+                    }
 
                 bone.gx = bonePos.gx;
                 bone.gy = bonePos.gy;
@@ -436,8 +450,8 @@
                 resizeCanvas(); 
 
                 // player is faster; ghoul is slower to make winning feasible
-                player = createCharacter(1, 1, '🐶', tileSize / 3);
-                ghoul = createCharacter(ghoulPos.gx, ghoulPos.gy, '👹', tileSize / 20);
+                    player = createCharacter(playerStart.gx, playerStart.gy, '🐶', tileSize / 3);
+                    ghoul = createCharacter(ghoulStart.gx, ghoulStart.gy, '👹', tileSize / 20);
 
                 gameOver = false;
                 messageModal.classList.add('hidden');
