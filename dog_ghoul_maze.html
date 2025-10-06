@@ -218,15 +218,19 @@
             }
 
             function resizeCanvas() {
+                // Initialize tileSize and canvas once; keep fixed afterwards so maze layout is stable
+                if (tileSize) return; // already initialized
+
                 const shorterSide = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.8);
-                tileSize = Math.floor(shorterSide / maze[0].length);
+                tileSize = Math.floor(shorterSide / maze[0].length) || 16;
                 canvas.width = tileSize * maze[0].length;
                 canvas.height = tileSize * maze.length;
                 bone.size = tileSize * 0.7;
                 if(player) {
                     player.size = ghoul.size = tileSize * 0.8;
-                    player.speed = tileSize / 6; 
-                    ghoul.speed = tileSize / 12;
+                    // Make player faster and ghoul slower for easier wins
+                    player.speed = tileSize / 3; 
+                    ghoul.speed = tileSize / 20;
                     player.x = player.gx * tileSize; player.y = player.gy * tileSize;
                     player.targetX = player.x; player.targetY = player.y;
                     ghoul.x = ghoul.gx * tileSize; ghoul.y = ghoul.gy * tileSize;
@@ -382,52 +386,32 @@
                 
                 maze = generateMaze(21, 15);
 
-                // --- NEW: Find the furthest point for the bone ---
+                // Find the furthest reachable point from the player and put the bone there (exit)
                 const bonePos = findFurthestPoint(maze, 1, 1);
 
-                // --- Smarter Placement Logic for Ghoul ---
+                // Build a list of open spots and choose the farthest valid spot for the ghoul
                 const openSpots = [];
                 for (let r = 1; r < maze.length - 1; r++) {
                     for (let c = 1; c < maze[0].length - 1; c++) {
                         if (maze[r][c] !== 1) {
-                            const distance = Math.abs(c - 1) + Math.abs(r - 1); // Manhattan distance from player
+                            const distance = Math.abs(c - 1) + Math.abs(r - 1); // Manhattan dist from player
                             openSpots.push({ gx: c, gy: r, distance });
                         }
                     }
                 }
-                
-                // Ghoul must not be too close to the player
-                const ghoulSpots = openSpots.filter(spot => spot.distance > 8);
-                
-                // Get a random valid spot for the ghoul that isn't the bone's spot or player start
-                let ghoulPos;
-                const validGhoulSpots = ghoulSpots.filter(spot => 
-                    (spot.gx !== bonePos.gx || spot.gy !== bonePos.gy) && 
-                    (spot.gx !== 1 || spot.gy !== 1)
-                );
-                
-                if (validGhoulSpots.length > 0) {
-                    ghoulPos = validGhoulSpots[Math.floor(Math.random() * validGhoulSpots.length)];
-                } else {
-                    // Fallback if no ideal spots are found
-                    const fallbackSpots = openSpots.filter(spot => 
-                        (spot.gx !== 1 || spot.gy !== 1) &&
-                        (spot.gx !== bonePos.gx || spot.gy !== bonePos.gy)
-                    );
-                    ghoulPos = fallbackSpots.length > 0 
-                        ? fallbackSpots[Math.floor(Math.random() * fallbackSpots.length)]
-                        : { gx: maze[0].length - 2, gy: maze.length - 2}; // Absolute fallback
-                }
 
+                const validGhoulSpots = openSpots.filter(spot => (spot.gx !== 1 || spot.gy !== 1) && (spot.gx !== bonePos.gx || spot.gy !== bonePos.gy));
+                let ghoulPos = validGhoulSpots.length > 0 ? validGhoulSpots.sort((a,b) => b.distance - a.distance)[0] : { gx: maze[0].length - 2, gy: maze.length - 2 };
 
                 bone.gx = bonePos.gx;
                 bone.gy = bonePos.gy;
-                maze[bone.gy][bone.gx] = 0; // The bone spot is not a treat
+                maze[bone.gy][bone.gx] = 0; // mark bone spot as empty (not a treat)
 
                 resizeCanvas(); 
 
-                player = createCharacter(1, 1, '🐶', tileSize / 6);
-                ghoul = createCharacter(ghoulPos.gx, ghoulPos.gy, '👹', tileSize / 12);
+                // player is faster; ghoul is slower to make winning feasible
+                player = createCharacter(1, 1, '🐶', tileSize / 3);
+                ghoul = createCharacter(ghoulPos.gx, ghoulPos.gy, '👹', tileSize / 20);
 
                 gameOver = false;
                 messageModal.classList.add('hidden');
@@ -473,8 +457,8 @@
             }
 
             window.addEventListener('keydown', handleKeyDown);
+            // Keep the canvas size fixed after initialization; on resize just redraw so layout stays centered
             window.addEventListener('resize', () => {
-                resizeCanvas();
                 draw();
             });
             restartButton.addEventListener('click', resetGame);
