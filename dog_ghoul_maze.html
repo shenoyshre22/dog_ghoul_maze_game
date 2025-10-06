@@ -89,7 +89,26 @@
             
             let tileSize, score, frame = 0;
             let audioCtx, audioReady = false;
-            let maze; // Maze is now dynamic
+            // Fixed maze pattern (kept the same across games)
+            // 1 = wall, 2 = path/treat, 0 = exit/bone
+            const fixedMaze = [
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1],
+                [1,2,1,2,1,2,1,1,1,2,1,2,1,2,1,1,1,1,1,2,1],
+                [1,2,1,2,2,2,2,2,1,2,2,2,1,2,1,2,2,2,1,2,1],
+                [1,2,1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,2,1,2,1],
+                [1,2,2,2,2,1,2,2,2,2,1,2,2,2,2,2,1,2,2,2,1],
+                [1,1,1,2,1,1,1,2,1,2,1,1,1,2,1,1,1,2,1,2,1],
+                [1,2,2,2,1,2,2,2,1,2,2,2,2,2,1,2,2,2,1,2,1],
+                [1,2,1,1,1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1],
+                [1,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1],
+                [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+                [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+                [1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1],
+                [1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1],
+            ];
+            let maze = null; // will be set to a copy of fixedMaze in resetGame
             
             const createCharacter = (gx, gy, char, speed) => ({
                 gx, gy, x: gx * tileSize, y: gy * tileSize,
@@ -384,10 +403,11 @@
                 score = 0;
                 scoreDisplay.textContent = 'Score: 0';
                 
-                maze = generateMaze(21, 15);
+                // Use the fixed maze pattern (kept the same every game)
+                maze = JSON.parse(JSON.stringify(fixedMaze));
 
-                // Find the furthest reachable point from the player and put the bone there (exit)
-                const bonePos = findFurthestPoint(maze, 1, 1);
+                // Bone is fixed at the exit cell in the fixedMaze (col=19,row=10)
+                const bonePos = { gx: 19, gy: 10 };
 
                 // Build a list of open spots and choose the farthest valid spot for the ghoul
                 const openSpots = [];
